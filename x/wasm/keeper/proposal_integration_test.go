@@ -10,7 +10,10 @@ import (
 
 	wasmvm "github.com/CosmWasm/wasmvm"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	v1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	"github.com/cosmos/cosmos-sdk/x/params/client/utils"
 	"github.com/cosmos/cosmos-sdk/x/params/types/proposal"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +25,7 @@ import (
 
 func TestStoreCodeProposal(t *testing.T) {
 	parentCtx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(parentCtx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -67,14 +70,8 @@ func TestStoreCodeProposal(t *testing.T) {
 				p.CodeHash = checksum
 			})
 
-			// when stored
-			storedProposal, err := govKeeper.SubmitProposal(ctx, src)
-			require.NoError(t, err)
-
-			// and proposal execute
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			err = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, err)
+			// when
+			mustSubmitAndExecuteLegacyProposal(t, ctx, src, myActorAddress, keepers)
 
 			// then
 			cInfo := wasmKeeper.GetCodeInfo(ctx, 1)
@@ -89,9 +86,40 @@ func TestStoreCodeProposal(t *testing.T) {
 	}
 }
 
+func mustSubmitAndExecuteLegacyProposal(t *testing.T, ctx sdk.Context, content v1beta1.Content, myActorAddress string, keepers TestKeepers) {
+	t.Helper()
+	govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+	msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
+	// ignore all submit events
+	contentMsg, err := submitLegacyProposal(t, ctx.WithEventManager(sdk.NewEventManager()), content, myActorAddress, govAuthority, msgServer)
+	require.NoError(t, err)
+
+	_, err = msgServer.ExecLegacyContent(sdk.WrapSDKContext(ctx), v1.NewMsgExecLegacyContent(contentMsg.Content, govAuthority))
+	require.NoError(t, err)
+}
+
+// does not fail on submit proposal
+func submitLegacyProposal(t *testing.T, ctx sdk.Context, content v1beta1.Content, myActorAddress string, govAuthority string, msgServer v1.MsgServer) (*v1.MsgExecLegacyContent, error) {
+	t.Helper()
+	contentMsg, err := v1.NewLegacyContent(content, govAuthority)
+	require.NoError(t, err)
+
+	proposal, err := v1.NewMsgSubmitProposal(
+		[]sdk.Msg{contentMsg},
+		sdk.Coins{},
+		myActorAddress,
+		"metadata",
+	)
+	require.NoError(t, err)
+
+	// when stored
+	_, err = msgServer.SubmitProposal(sdk.WrapSDKContext(ctx), proposal)
+	return contentMsg, err
+}
+
 func TestInstantiateProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(ctx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -118,13 +146,7 @@ func TestInstantiateProposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	// then
 	contractAddr, err := sdk.AccAddressFromBech32("cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr")
@@ -154,7 +176,7 @@ func TestInstantiateProposal(t *testing.T) {
 
 func TestInstantiate2Proposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(ctx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -185,13 +207,7 @@ func TestInstantiate2Proposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	cInfo := wasmKeeper.GetContractInfo(ctx, contractAddress)
 	require.NotNil(t, cInfo)
@@ -218,7 +234,7 @@ func TestInstantiate2Proposal(t *testing.T) {
 
 func TestInstantiateProposal_NoAdmin(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(ctx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -241,7 +257,10 @@ func TestInstantiateProposal_NoAdmin(t *testing.T) {
 		p.Admin = "invalid"
 		p.Label = "testing"
 	})
-	_, err = govKeeper.SubmitProposal(ctx, src)
+	govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+	msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
+
+	_, err = submitLegacyProposal(t, ctx, src, oneAddress.String(), govAuthority, msgServer)
 	require.Error(t, err)
 
 	// test with no admin
@@ -254,13 +273,8 @@ func TestInstantiateProposal_NoAdmin(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	_, err = submitLegacyProposal(t, ctx, src, oneAddress.String(), govAuthority, msgServer)
+	require.Error(t, err)
 
 	// then
 	contractAddr, err := sdk.AccAddressFromBech32("cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr")
@@ -290,7 +304,7 @@ func TestInstantiateProposal_NoAdmin(t *testing.T) {
 
 func TestStoreAndInstantiateContractProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(ctx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -317,13 +331,7 @@ func TestStoreAndInstantiateContractProposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	// then
 	contractAddr, err := sdk.AccAddressFromBech32("cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr")
@@ -354,7 +362,7 @@ func TestStoreAndInstantiateContractProposal(t *testing.T) {
 
 func TestMigrateProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 	wasmKeeper.SetParams(ctx, types.Params{
 		CodeUploadAccess:             types.AllowNobody,
 		InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -403,13 +411,7 @@ func TestMigrateProposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, &src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, anyAddress.String(), keepers)
 
 	// then
 	require.NoError(t, err)
@@ -439,7 +441,7 @@ func TestMigrateProposal(t *testing.T) {
 
 func TestExecuteProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, bankKeeper := keepers.GovKeeper, keepers.BankKeeper
+	bankKeeper := keepers.BankKeeper
 
 	exampleContract := InstantiateHackatomExampleContract(t, ctx, keepers)
 	contractAddr := exampleContract.Contract
@@ -466,7 +468,9 @@ func TestExecuteProposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// fails on store - this doesn't have permission
-	storedProposal, err := govKeeper.SubmitProposal(ctx, &badSrc)
+	govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+	msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
+	_, err = submitLegacyProposal(t, ctx, &badSrc, exampleContract.BeneficiaryAddr.String(), govAuthority, msgServer)
 	require.Error(t, err)
 	// balance should not change
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -484,13 +488,7 @@ func TestExecuteProposal(t *testing.T) {
 	em = sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err = govKeeper.SubmitProposal(ctx, &src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, exampleContract.BeneficiaryAddr.String(), keepers)
 
 	// balance should be empty (proper release)
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -499,7 +497,7 @@ func TestExecuteProposal(t *testing.T) {
 
 func TestSudoProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, bankKeeper := keepers.GovKeeper, keepers.BankKeeper
+	bankKeeper := keepers.BankKeeper
 
 	exampleContract := InstantiateHackatomExampleContract(t, ctx, keepers)
 	contractAddr := exampleContract.Contract
@@ -535,13 +533,7 @@ func TestSudoProposal(t *testing.T) {
 	em := sdk.NewEventManager()
 
 	// when stored
-	storedProposal, err := govKeeper.SubmitProposal(ctx, &src)
-	require.NoError(t, err)
-
-	// and proposal execute
-	handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-	err = handler(ctx.WithEventManager(em), storedProposal.GetContent())
-	require.NoError(t, err)
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, exampleContract.BeneficiaryAddr.String(), keepers)
 
 	// balance should be empty (and verifier richer)
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -560,7 +552,7 @@ func TestAdminProposals(t *testing.T) {
 
 	specs := map[string]struct {
 		state       types.ContractInfo
-		srcProposal govtypes.Content
+		srcProposal v1beta1.Content
 		expAdmin    sdk.AccAddress
 	}{
 		"update with different admin": {
@@ -609,7 +601,7 @@ func TestAdminProposals(t *testing.T) {
 	for msg, spec := range specs {
 		t.Run(msg, func(t *testing.T) {
 			ctx, keepers := CreateTestInput(t, false, "staking")
-			govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+			wasmKeeper := keepers.WasmKeeper
 			wasmKeeper.SetParams(ctx, types.Params{
 				CodeUploadAccess:             types.AllowNobody,
 				InstantiateDefaultPermission: types.AccessTypeNobody,
@@ -628,13 +620,7 @@ func TestAdminProposals(t *testing.T) {
 
 			require.NoError(t, wasmKeeper.importContract(ctx, contractAddr, &spec.state, []types.Model{}, entries))
 			// when stored
-			storedProposal, err := govKeeper.SubmitProposal(ctx, spec.srcProposal)
-			require.NoError(t, err)
-
-			// and execute proposal
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			err = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, err)
+			mustSubmitAndExecuteLegacyProposal(t, ctx, spec.srcProposal, otherAddress.String(), keepers)
 
 			// then
 			cInfo := wasmKeeper.GetContractInfo(ctx, contractAddr)
@@ -646,7 +632,7 @@ func TestAdminProposals(t *testing.T) {
 
 func TestUpdateParamsProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 
 	var (
 		legacyAmino                           = keepers.EncodingConfig.Amino
@@ -725,13 +711,7 @@ func TestUpdateParamsProposal(t *testing.T) {
 				Changes:     jsonProposal.Changes.ToParamChanges(),
 			}
 			// when stored
-			storedProposal, err := govKeeper.SubmitProposal(ctx, &proposal)
-			require.NoError(t, err)
-
-			// and proposal execute
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			err = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, err)
+			mustSubmitAndExecuteLegacyProposal(t, ctx, &proposal, myAddress.String(), keepers)
 
 			// then
 			assert.True(t, spec.expUploadConfig.Equals(wasmKeeper.getUploadAccessConfig(ctx)),
@@ -743,7 +723,7 @@ func TestUpdateParamsProposal(t *testing.T) {
 
 func TestPinCodesProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 
 	mock := wasmtesting.MockWasmer{
 		StoreCodeFn:   wasmtesting.NoOpStoreCodeFn,
@@ -798,6 +778,7 @@ func TestPinCodesProposal(t *testing.T) {
 	parentCtx := ctx
 	for msg, spec := range specs {
 		t.Run(msg, func(t *testing.T) {
+			myActorAddress := RandomBech32AccountAddress(t)
 			gotPinnedChecksums = nil
 			ctx, _ := parentCtx.CacheContext()
 			mock.PinFn = spec.mockFn
@@ -806,9 +787,11 @@ func TestPinCodesProposal(t *testing.T) {
 				Description: "Bar",
 				CodeIDs:     spec.srcCodeIDs,
 			}
+			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
 
 			// when stored
-			storedProposal, gotErr := govKeeper.SubmitProposal(ctx, &proposal)
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, myActorAddress, govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return
@@ -816,9 +799,8 @@ func TestPinCodesProposal(t *testing.T) {
 			require.NoError(t, gotErr)
 
 			// and proposal execute
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			gotErr = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, gotErr)
+			_, err := msgServer.ExecLegacyContent(sdk.WrapSDKContext(ctx), v1.NewMsgExecLegacyContent(contentMsg.Content, govAuthority))
+			require.NoError(t, err)
 
 			// then
 			for i := range spec.srcCodeIDs {
@@ -831,7 +813,7 @@ func TestPinCodesProposal(t *testing.T) {
 
 func TestUnpinCodesProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 
 	mock := wasmtesting.MockWasmer{
 		StoreCodeFn:   wasmtesting.NoOpStoreCodeFn,
@@ -894,9 +876,11 @@ func TestUnpinCodesProposal(t *testing.T) {
 				Description: "Bar",
 				CodeIDs:     spec.srcCodeIDs,
 			}
+			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
 
-			// when stored
-			storedProposal, gotErr := govKeeper.SubmitProposal(ctx, &proposal)
+			// when
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return
@@ -904,9 +888,8 @@ func TestUnpinCodesProposal(t *testing.T) {
 			require.NoError(t, gotErr)
 
 			// and proposal execute
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			gotErr = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, gotErr)
+			_, err := msgServer.ExecLegacyContent(sdk.WrapSDKContext(ctx), v1.NewMsgExecLegacyContent(contentMsg.Content, govAuthority))
+			require.NoError(t, err)
 
 			// then
 			for i := range spec.srcCodeIDs {
@@ -919,7 +902,7 @@ func TestUnpinCodesProposal(t *testing.T) {
 
 func TestUpdateInstantiateConfigProposal(t *testing.T) {
 	ctx, keepers := CreateTestInput(t, false, "staking")
-	govKeeper, wasmKeeper := keepers.GovKeeper, keepers.WasmKeeper
+	wasmKeeper := keepers.WasmKeeper
 
 	mock := wasmtesting.MockWasmer{
 		StoreCodeFn:   wasmtesting.NoOpStoreCodeFn,
@@ -982,6 +965,8 @@ func TestUpdateInstantiateConfigProposal(t *testing.T) {
 					InstantiatePermission: cu.InstantiatePermission,
 				})
 			}
+			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
 
 			proposal := types.UpdateInstantiateConfigProposal{
 				Title:               "Foo",
@@ -990,7 +975,7 @@ func TestUpdateInstantiateConfigProposal(t *testing.T) {
 			}
 
 			// when stored
-			storedProposal, gotErr := govKeeper.SubmitProposal(ctx, &proposal)
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return
@@ -998,9 +983,8 @@ func TestUpdateInstantiateConfigProposal(t *testing.T) {
 			require.NoError(t, gotErr)
 
 			// and proposal execute
-			handler := govKeeper.Router().GetRoute(storedProposal.ProposalRoute())
-			gotErr = handler(ctx, storedProposal.GetContent())
-			require.NoError(t, gotErr)
+			_, err := msgServer.ExecLegacyContent(sdk.WrapSDKContext(ctx), v1.NewMsgExecLegacyContent(contentMsg.Content, govAuthority))
+			require.NoError(t, err)
 
 			// then
 			for i := range spec.accessConfigUpdates {

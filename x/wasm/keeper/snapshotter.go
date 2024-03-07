@@ -46,6 +46,14 @@ func (ws *WasmSnapshotter) SupportedFormats() []uint32 {
 	return []uint32{SnapshotFormat}
 }
 
+func (ws *WasmSnapshotter) PruneSnapshotHeight(height int64) {
+	panic("not implemented")
+}
+
+func (ws *WasmSnapshotter) SetSnapshotInterval(snapshotInterval uint64) {
+	panic("not implemented")
+}
+
 func (ws *WasmSnapshotter) Snapshot(height uint64, protoWriter protoio.Writer) error {
 	cacheMS, err := ws.cms.CacheMultiStoreWithVersion(int64(height))
 	if err != nil {

@@ -11,9 +11,8 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	capabilitytypes "github.com/cosmos/cosmos-sdk/x/capability/types"
-	clienttypes "github.com/cosmos/ibc-go/v4/modules/core/02-client/types"
-	channeltypes "github.com/cosmos/ibc-go/v4/modules/core/04-channel/types"
-	ibcexported "github.com/cosmos/ibc-go/v4/modules/core/exported"
+	clienttypes "github.com/cosmos/ibc-go/v6/modules/core/02-client/types"
+	channeltypes "github.com/cosmos/ibc-go/v6/modules/core/04-channel/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -225,12 +224,25 @@ func TestIBCRawPacketHandler(t *testing.T) {
 	ibcPort := "contractsIBCPort"
 	var ctx sdk.Context
 
-	var capturedPacket ibcexported.PacketI
+	type CapturedPacket struct {
+		sourcePort       string
+		sourceChannel    string
+		timeoutHeight    clienttypes.Height
+		timeoutTimestamp uint64
+		data             []byte
+	}
+	var capturedPacket *CapturedPacket
 
 	capturePacketsSenderMock := &wasmtesting.MockIBCPacketSender{
-		SendPacketFn: func(ctx sdk.Context, channelCap *capabilitytypes.Capability, packet ibcexported.PacketI) error {
-			capturedPacket = packet
-			return nil
+		SendPacketFn: func(ctx sdk.Context, channelCap *capabilitytypes.Capability, sourcePort string, sourceChannel string, timeoutHeight clienttypes.Height, timeoutTimestamp uint64, data []byte) (uint64, error) {
+			capturedPacket = &CapturedPacket{
+				sourcePort:       sourcePort,
+				sourceChannel:    sourceChannel,
+				timeoutHeight:    timeoutHeight,
+				timeoutTimestamp: timeoutTimestamp,
+				data:             data,
+			}
+			return 1, nil
 		},
 	}
 	chanKeeper := &wasmtesting.MockChannelKeeper{
@@ -411,7 +423,7 @@ func TestBurnCoinMessageHandlerIntegration(t *testing.T) {
 			// and total supply reduced by burned amount
 			after, err := keepers.BankKeeper.TotalSupply(sdk.WrapSDKContext(ctx), &banktypes.QueryTotalSupplyRequest{})
 			require.NoError(t, err)
-			diff := before.Supply.Sub(after.Supply)
+			diff := before.Supply.Sub(after.Supply...)
 			assert.Equal(t, sdk.NewCoins(sdk.NewCoin("denom", sdk.NewInt(100))), diff)
 		})
 	}

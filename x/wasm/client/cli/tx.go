@@ -339,7 +339,11 @@ func parseInstantiateArgs(rawCodeID, initMsg string, kr keyring.Keyring, sender 
 			if err != nil {
 				return nil, fmt.Errorf("admin %s", err)
 			}
-			adminStr = info.GetAddress().String()
+			address, err := info.GetAddress()
+			if err != nil {
+				return nil, fmt.Errorf("info address %s", err)
+			}
+			adminStr = address.String()
 		} else {
 			adminStr = addr.String()
 		}
@@ -526,7 +530,8 @@ $ %s tx grant <grantee_addr> execution <contract_addr> --allow-all-messages --ma
 				return fmt.Errorf("%s authorization type not supported", args[1])
 			}
 
-			grantMsg, err := authz.NewMsgGrant(clientCtx.GetFromAddress(), grantee, authorization, time.Unix(0, exp))
+			expiration := time.Unix(0, exp)
+			grantMsg, err := authz.NewMsgGrant(clientCtx.GetFromAddress(), grantee, authorization, &expiration)
 			if err != nil {
 				return err
 			}
