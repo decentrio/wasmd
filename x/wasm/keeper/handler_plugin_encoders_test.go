@@ -303,7 +303,8 @@ func TestEncoding(t *testing.T) {
 					},
 				},
 			},
-			expError: false, // fails in the handler
+			expError:   false, // fails in the handler
+			expInvalid: true,
 			output: []sdk.Msg{
 				&stakingtypes.MsgDelegate{
 					DelegatorAddress: addr1.String(),
@@ -564,10 +565,9 @@ func TestEncoding(t *testing.T) {
 			if tc.expError {
 				assert.Error(t, err)
 				return
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.output, res)
 			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.output, res)
 			// and valid sdk message
 			for _, v := range res {
 				gotErr := v.ValidateBasic()

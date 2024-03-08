@@ -323,6 +323,7 @@ func (endpoint *Endpoint) ChanOpenTry() error {
 
 // ChanOpenAck will construct and execute a MsgChannelOpenAck on the associated endpoint.
 func (endpoint *Endpoint) ChanOpenAck() error {
+	fmt.Println("endpoint counterparty", endpoint.Counterparty)
 	if err := endpoint.UpdateClient(); err != nil {
 		return err
 	}

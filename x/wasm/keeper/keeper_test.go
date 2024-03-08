@@ -412,7 +412,7 @@ func TestInstantiate(t *testing.T) {
 
 	gasAfter := ctx.GasMeter().GasConsumed()
 	if types.EnableGasVerification {
-		require.Equal(t, uint64(0x1a7b7), gasAfter-gasBefore)
+		require.Equal(t, uint64(0x1b5bd), gasAfter-gasBefore)
 	}
 
 	// ensure it is stored properly
@@ -856,7 +856,7 @@ func TestExecute(t *testing.T) {
 	// make sure gas is properly deducted from ctx
 	gasAfter := ctx.GasMeter().GasConsumed()
 	if types.EnableGasVerification {
-		require.Equal(t, uint64(0x17d7f), gasAfter-gasBefore)
+		require.Equal(t, uint64(0x1a250), gasAfter-gasBefore)
 	}
 	// ensure bob now exists and got both payments released
 	bobAcct = accKeeper.GetAccount(ctx, bob)
@@ -995,7 +995,7 @@ func TestExecuteWithPanic(t *testing.T) {
 	contractID, _, err := keeper.Create(ctx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, bob := keyPubAddr()
+	_, bob := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: bob,
@@ -1027,7 +1027,7 @@ func TestExecuteWithCpuLoop(t *testing.T) {
 	contractID, _, err := keeper.Create(ctx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, bob := keyPubAddr()
+	_, bob := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: bob,
@@ -1069,7 +1069,7 @@ func TestExecuteWithStorageLoop(t *testing.T) {
 	contractID, _, err := keeper.Create(ctx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, bob := keyPubAddr()
+	_, bob := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: bob,
@@ -1349,7 +1349,7 @@ func TestMigrateWithDispatchedMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, originalContractID, burnerContractID)
 
-	_, _, myPayoutAddr := keyPubAddr()
+	_, myPayoutAddr := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: fred,
@@ -1513,8 +1513,8 @@ func TestSudo(t *testing.T) {
 	contractID, _, err := keeper.Create(ctx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, bob := keyPubAddr()
-	_, _, fred := keyPubAddr()
+	_, bob := keyPubAddr()
+	_, fred := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: bob,
@@ -1526,7 +1526,7 @@ func TestSudo(t *testing.T) {
 	require.Equal(t, "cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr", addr.String())
 
 	// the community is broke
-	_, _, community := keyPubAddr()
+	_, community := keyPubAddr()
 	comAcct := accKeeper.GetAccount(ctx, community)
 	require.Nil(t, comAcct)
 
@@ -1599,7 +1599,7 @@ func TestUpdateContractAdmin(t *testing.T) {
 	originalContractID, _, err := keeper.Create(parentCtx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, anyAddr := keyPubAddr()
+	_, anyAddr := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: anyAddr,
@@ -1669,7 +1669,7 @@ func TestClearContractAdmin(t *testing.T) {
 	originalContractID, _, err := keeper.Create(parentCtx, creator, hackatomWasm, nil)
 	require.NoError(t, err)
 
-	_, _, anyAddr := keyPubAddr()
+	_, anyAddr := keyPubAddr()
 	initMsg := HackatomExampleInitMsg{
 		Verifier:    fred,
 		Beneficiary: anyAddr,

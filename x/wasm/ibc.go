@@ -50,7 +50,7 @@ func (i IBCHandler) OnChanOpenInit(
 	}
 	contractAddr, err := ContractFromPortID(portID)
 	if err != nil {
-		return "", sdkerrors.Wrapf(err, "contract port id")
+		return version, sdkerrors.Wrapf(err, "contract port id")
 	}
 
 	msg := wasmvmtypes.IBCChannelOpenMsg{
@@ -69,7 +69,7 @@ func (i IBCHandler) OnChanOpenInit(
 	// Allow contracts to return a version (or default to proposed version if unset)
 	acceptedVersion, err := i.keeper.OnOpenChannel(ctx, contractAddr, msg)
 	if err != nil {
-		return "", err
+		return version, err
 	}
 	if acceptedVersion == "" {
 		acceptedVersion = version
@@ -77,7 +77,7 @@ func (i IBCHandler) OnChanOpenInit(
 
 	// Claim channel capability passed back by IBC module
 	if err := i.keeper.ClaimCapability(ctx, chanCap, host.ChannelCapabilityPath(portID, channelID)); err != nil {
-		return "", sdkerrors.Wrap(err, "claim capability")
+		return version, sdkerrors.Wrap(err, "claim capability")
 	}
 	return acceptedVersion, nil
 }

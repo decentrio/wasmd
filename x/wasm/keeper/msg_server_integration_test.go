@@ -20,7 +20,7 @@ import (
 var wasmContract []byte
 
 func TestStoreCode(t *testing.T) {
-	wasmApp := app.Setup(false)
+	wasmApp := app.SetupWithValSet(t, "test")
 	ctx := wasmApp.BaseApp.NewContext(false, tmproto.Header{})
 	_, _, sender := testdata.KeyTestPubAddr()
 	msg := types.MsgStoreCodeFixture(func(m *types.MsgStoreCode) {

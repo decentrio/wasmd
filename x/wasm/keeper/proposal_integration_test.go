@@ -13,15 +13,15 @@ import (
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
-	v1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
-	"github.com/cosmos/cosmos-sdk/x/params/client/utils"
-	"github.com/cosmos/cosmos-sdk/x/params/types/proposal"
+	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/CosmWasm/wasmd/x/wasm/keeper/wasmtesting"
 	"github.com/CosmWasm/wasmd/x/wasm/types"
 )
+
+const myTestLabel = "testing"
 
 func TestStoreCodeProposal(t *testing.T) {
 	parentCtx, keepers := CreateTestInput(t, false, "staking")
@@ -141,11 +141,11 @@ func TestInstantiateProposal(t *testing.T) {
 		p.CodeID = firstCodeID
 		p.RunAs = oneAddress.String()
 		p.Admin = otherAddress.String()
-		p.Label = "testing"
+		p.Label = myTestLabel
 	})
 	em := sdk.NewEventManager()
 
-	// when stored
+	// when
 	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	// then
@@ -157,7 +157,7 @@ func TestInstantiateProposal(t *testing.T) {
 	assert.Equal(t, uint64(1), cInfo.CodeID)
 	assert.Equal(t, oneAddress.String(), cInfo.Creator)
 	assert.Equal(t, otherAddress.String(), cInfo.Admin)
-	assert.Equal(t, "testing", cInfo.Label)
+	assert.Equal(t, myTestLabel, cInfo.Label)
 	expHistory := []types.ContractCodeHistoryEntry{{
 		Operation: types.ContractCodeHistoryOperationTypeInit,
 		CodeID:    src.CodeID,
@@ -192,8 +192,8 @@ func TestInstantiate2Proposal(t *testing.T) {
 	var (
 		oneAddress   sdk.AccAddress = bytes.Repeat([]byte{0x1}, types.ContractAddrLen)
 		otherAddress sdk.AccAddress = bytes.Repeat([]byte{0x2}, types.ContractAddrLen)
-		label        string         = "label"
-		salt         []byte         = []byte("mySalt")
+		label                       = "label"
+		salt                        = []byte("mySalt")
 	)
 	src := types.InstantiateContract2ProposalFixture(func(p *types.InstantiateContract2Proposal) {
 		p.CodeID = firstCodeID
@@ -206,7 +206,7 @@ func TestInstantiate2Proposal(t *testing.T) {
 
 	em := sdk.NewEventManager()
 
-	// when stored
+	// when
 	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	cInfo := wasmKeeper.GetContractInfo(ctx, contractAddress)
@@ -224,7 +224,7 @@ func TestInstantiate2Proposal(t *testing.T) {
 	}}
 	assert.Equal(t, expHistory, wasmKeeper.GetContractHistory(ctx, contractAddress))
 	// and event
-	require.Len(t, em.Events(), 3, "%#v", em.Events())
+	require.Len(t, em.Events(), 3, prettyEvents(t, em.Events()))
 	require.Equal(t, types.EventTypeInstantiate, em.Events()[0].Type)
 	require.Equal(t, types.WasmModuleEventType, em.Events()[1].Type)
 	require.Equal(t, types.EventTypeGovContractResult, em.Events()[2].Type)
@@ -250,56 +250,66 @@ func TestInstantiateProposal_NoAdmin(t *testing.T) {
 
 	var oneAddress sdk.AccAddress = bytes.Repeat([]byte{0x1}, types.ContractAddrLen)
 
-	// test invalid admin address
-	src := types.InstantiateContractProposalFixture(func(p *types.InstantiateContractProposal) {
-		p.CodeID = firstCodeID
-		p.RunAs = oneAddress.String()
-		p.Admin = "invalid"
-		p.Label = "testing"
-	})
-	govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
-	msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
+	specs := map[string]struct {
+		srcAdmin string
+		expErr   bool
+	}{
+		"empty admin": {
+			srcAdmin: "",
+		},
+		"invalid admin": {
+			srcAdmin: "invalid",
+			expErr:   true,
+		},
+	}
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			src := types.InstantiateContractProposalFixture(func(p *types.InstantiateContractProposal) {
+				p.CodeID = firstCodeID
+				p.RunAs = oneAddress.String()
+				p.Admin = spec.srcAdmin
+				p.Label = myTestLabel
+			})
+			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
+			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
+			// when
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, src, oneAddress.String(), govAuthority, msgServer)
+			// then
+			if spec.expErr {
+				require.Error(t, gotErr)
+				return
+			}
+			require.NoError(t, gotErr)
+			// and when
+			em := sdk.NewEventManager()
+			_, err = msgServer.ExecLegacyContent(sdk.WrapSDKContext(ctx.WithEventManager(em)), v1.NewMsgExecLegacyContent(contentMsg.Content, govAuthority))
+			// then
+			require.NoError(t, err)
+			contractAddr, err := sdk.AccAddressFromBech32("cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr")
+			require.NoError(t, err)
 
-	_, err = submitLegacyProposal(t, ctx, src, oneAddress.String(), govAuthority, msgServer)
-	require.Error(t, err)
-
-	// test with no admin
-	src = types.InstantiateContractProposalFixture(func(p *types.InstantiateContractProposal) {
-		p.CodeID = firstCodeID
-		p.RunAs = oneAddress.String()
-		p.Admin = ""
-		p.Label = "testing"
-	})
-	em := sdk.NewEventManager()
-
-	// when stored
-	_, err = submitLegacyProposal(t, ctx, src, oneAddress.String(), govAuthority, msgServer)
-	require.Error(t, err)
-
-	// then
-	contractAddr, err := sdk.AccAddressFromBech32("cosmos14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s4hmalr")
-	require.NoError(t, err)
-
-	cInfo := wasmKeeper.GetContractInfo(ctx, contractAddr)
-	require.NotNil(t, cInfo)
-	assert.Equal(t, uint64(1), cInfo.CodeID)
-	assert.Equal(t, oneAddress.String(), cInfo.Creator)
-	assert.Equal(t, "", cInfo.Admin)
-	assert.Equal(t, "testing", cInfo.Label)
-	expHistory := []types.ContractCodeHistoryEntry{{
-		Operation: types.ContractCodeHistoryOperationTypeInit,
-		CodeID:    src.CodeID,
-		Updated:   types.NewAbsoluteTxPosition(ctx),
-		Msg:       src.Msg,
-	}}
-	assert.Equal(t, expHistory, wasmKeeper.GetContractHistory(ctx, contractAddr))
-	// and event
-	require.Len(t, em.Events(), 3, "%#v", em.Events())
-	require.Equal(t, types.EventTypeInstantiate, em.Events()[0].Type)
-	require.Equal(t, types.WasmModuleEventType, em.Events()[1].Type)
-	require.Equal(t, types.EventTypeGovContractResult, em.Events()[2].Type)
-	require.Len(t, em.Events()[2].Attributes, 1)
-	require.NotEmpty(t, em.Events()[2].Attributes[0])
+			cInfo := wasmKeeper.GetContractInfo(ctx, contractAddr)
+			require.NotNil(t, cInfo)
+			assert.Equal(t, uint64(1), cInfo.CodeID)
+			assert.Equal(t, oneAddress.String(), cInfo.Creator)
+			assert.Equal(t, "", cInfo.Admin)
+			assert.Equal(t, myTestLabel, cInfo.Label)
+			expHistory := []types.ContractCodeHistoryEntry{{
+				Operation: types.ContractCodeHistoryOperationTypeInit,
+				CodeID:    src.CodeID,
+				Updated:   types.NewAbsoluteTxPosition(ctx),
+				Msg:       src.Msg,
+			}}
+			assert.Equal(t, expHistory, wasmKeeper.GetContractHistory(ctx, contractAddr))
+			// and event
+			require.Len(t, em.Events(), 3, "%#v", em.Events())
+			require.Equal(t, types.EventTypeInstantiate, em.Events()[0].Type)
+			require.Equal(t, types.WasmModuleEventType, em.Events()[1].Type)
+			require.Equal(t, types.EventTypeGovContractResult, em.Events()[2].Type)
+			require.Len(t, em.Events()[2].Attributes, 1)
+			require.NotEmpty(t, em.Events()[2].Attributes[0])
+		})
+	}
 }
 
 func TestStoreAndInstantiateContractProposal(t *testing.T) {
@@ -325,12 +335,12 @@ func TestStoreAndInstantiateContractProposal(t *testing.T) {
 		p.WASMByteCode = wasmCode
 		p.RunAs = oneAddress.String()
 		p.Admin = otherAddress.String()
-		p.Label = "testing"
+		p.Label = myTestLabel
 		p.CodeHash = checksum
 	})
 	em := sdk.NewEventManager()
 
-	// when stored
+	// when
 	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, oneAddress.String(), keepers)
 
 	// then
@@ -341,7 +351,7 @@ func TestStoreAndInstantiateContractProposal(t *testing.T) {
 	require.NotNil(t, cInfo)
 	assert.Equal(t, oneAddress.String(), cInfo.Creator)
 	assert.Equal(t, otherAddress.String(), cInfo.Admin)
-	assert.Equal(t, "testing", cInfo.Label)
+	assert.Equal(t, myTestLabel, cInfo.Label)
 	expHistory := []types.ContractCodeHistoryEntry{{
 		Operation: types.ContractCodeHistoryOperationTypeInit,
 		CodeID:    cInfo.CodeID,
@@ -382,7 +392,7 @@ func TestMigrateProposal(t *testing.T) {
 	)
 
 	contractInfo := types.ContractInfoFixture(func(c *types.ContractInfo) {
-		c.Label = "testing"
+		c.Label = myTestLabel
 		c.Admin = anyAddress.String()
 		c.Created = types.NewAbsoluteTxPosition(ctx)
 	})
@@ -400,7 +410,7 @@ func TestMigrateProposal(t *testing.T) {
 	migMsgBz, err := json.Marshal(migMsg)
 	require.NoError(t, err)
 
-	src := types.MigrateContractProposal{
+	src := &types.MigrateContractProposal{
 		Title:       "Foo",
 		Description: "Bar",
 		CodeID:      2,
@@ -410,8 +420,8 @@ func TestMigrateProposal(t *testing.T) {
 
 	em := sdk.NewEventManager()
 
-	// when stored
-	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, anyAddress.String(), keepers)
+	// when
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, anyAddress.String(), keepers)
 
 	// then
 	require.NoError(t, err)
@@ -419,7 +429,7 @@ func TestMigrateProposal(t *testing.T) {
 	require.NotNil(t, cInfo)
 	assert.Equal(t, uint64(2), cInfo.CodeID)
 	assert.Equal(t, anyAddress.String(), cInfo.Admin)
-	assert.Equal(t, "testing", cInfo.Label)
+	assert.Equal(t, myTestLabel, cInfo.Label)
 	expHistory := []types.ContractCodeHistoryEntry{{
 		Operation: types.ContractCodeHistoryOperationTypeInit,
 		CodeID:    firstCodeID,
@@ -457,7 +467,7 @@ func TestExecuteProposal(t *testing.T) {
 	require.NoError(t, err)
 
 	// try with runAs that doesn't have pemission
-	badSrc := types.ExecuteContractProposal{
+	badSrc := &types.ExecuteContractProposal{
 		Title:       "First",
 		Description: "Beneficiary has no permission to run",
 		Contract:    contractAddr.String(),
@@ -465,19 +475,18 @@ func TestExecuteProposal(t *testing.T) {
 		RunAs:       exampleContract.BeneficiaryAddr.String(),
 	}
 
-	em := sdk.NewEventManager()
-
 	// fails on store - this doesn't have permission
 	govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
 	msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
-	_, err = submitLegacyProposal(t, ctx, &badSrc, exampleContract.BeneficiaryAddr.String(), govAuthority, msgServer)
+	_, err = submitLegacyProposal(t, ctx, badSrc, exampleContract.BeneficiaryAddr.String(), govAuthority, msgServer)
 	require.Error(t, err)
+
 	// balance should not change
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
 	require.Equal(t, bal.Amount, sdk.NewInt(100))
 
 	// try again with the proper run-as
-	src := types.ExecuteContractProposal{
+	src := &types.ExecuteContractProposal{
 		Title:       "Second",
 		Description: "Verifier can execute",
 		Contract:    contractAddr.String(),
@@ -485,10 +494,10 @@ func TestExecuteProposal(t *testing.T) {
 		RunAs:       exampleContract.VerifierAddr.String(),
 	}
 
-	em = sdk.NewEventManager()
+	em := sdk.NewEventManager()
 
-	// when stored
-	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, exampleContract.BeneficiaryAddr.String(), keepers)
+	// when
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, exampleContract.BeneficiaryAddr.String(), keepers)
 
 	// balance should be empty (proper release)
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -501,7 +510,7 @@ func TestSudoProposal(t *testing.T) {
 
 	exampleContract := InstantiateHackatomExampleContract(t, ctx, keepers)
 	contractAddr := exampleContract.Contract
-	_, _, anyAddr := keyPubAddr()
+	_, anyAddr := keyPubAddr()
 
 	// check balance
 	bal := bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -523,7 +532,7 @@ func TestSudoProposal(t *testing.T) {
 	require.NoError(t, err)
 
 	// sudo can do anything
-	src := types.SudoContractProposal{
+	src := &types.SudoContractProposal{
 		Title:       "Sudo",
 		Description: "Steal funds for the verifier",
 		Contract:    contractAddr.String(),
@@ -532,8 +541,8 @@ func TestSudoProposal(t *testing.T) {
 
 	em := sdk.NewEventManager()
 
-	// when stored
-	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), &src, exampleContract.BeneficiaryAddr.String(), keepers)
+	// when
+	mustSubmitAndExecuteLegacyProposal(t, ctx.WithEventManager(em), src, exampleContract.BeneficiaryAddr.String(), keepers)
 
 	// balance should be empty (and verifier richer)
 	bal = bankKeeper.GetBalance(ctx, contractAddr, "denom")
@@ -619,104 +628,14 @@ func TestAdminProposals(t *testing.T) {
 			}
 
 			require.NoError(t, wasmKeeper.importContract(ctx, contractAddr, &spec.state, []types.Model{}, entries))
-			// when stored
+
+			// when
 			mustSubmitAndExecuteLegacyProposal(t, ctx, spec.srcProposal, otherAddress.String(), keepers)
 
 			// then
 			cInfo := wasmKeeper.GetContractInfo(ctx, contractAddr)
 			require.NotNil(t, cInfo)
 			assert.Equal(t, spec.expAdmin.String(), cInfo.Admin)
-		})
-	}
-}
-
-func TestUpdateParamsProposal(t *testing.T) {
-	ctx, keepers := CreateTestInput(t, false, "staking")
-	wasmKeeper := keepers.WasmKeeper
-
-	var (
-		legacyAmino                           = keepers.EncodingConfig.Amino
-		myAddress              sdk.AccAddress = make([]byte, types.ContractAddrLen)
-		oneAddressAccessConfig                = types.AccessTypeOnlyAddress.With(myAddress)
-	)
-
-	specs := map[string]struct {
-		src                proposal.ParamChange
-		expUploadConfig    types.AccessConfig
-		expInstantiateType types.AccessType
-	}{
-		"update upload permission param": {
-			src: proposal.ParamChange{
-				Subspace: types.ModuleName,
-				Key:      string(types.ParamStoreKeyUploadAccess),
-				Value:    string(legacyAmino.MustMarshalJSON(&types.AllowNobody)),
-			},
-			expUploadConfig:    types.AllowNobody,
-			expInstantiateType: types.AccessTypeEverybody,
-		},
-		"update upload permission with same as current value": {
-			src: proposal.ParamChange{
-				Subspace: types.ModuleName,
-				Key:      string(types.ParamStoreKeyUploadAccess),
-				Value:    string(legacyAmino.MustMarshalJSON(&types.AllowEverybody)),
-			},
-			expUploadConfig:    types.AllowEverybody,
-			expInstantiateType: types.AccessTypeEverybody,
-		},
-		"update upload permission param with address": {
-			src: proposal.ParamChange{
-				Subspace: types.ModuleName,
-				Key:      string(types.ParamStoreKeyUploadAccess),
-				Value:    string(legacyAmino.MustMarshalJSON(&oneAddressAccessConfig)),
-			},
-			expUploadConfig:    oneAddressAccessConfig,
-			expInstantiateType: types.AccessTypeEverybody,
-		},
-		"update instantiate param": {
-			src: proposal.ParamChange{
-				Subspace: types.ModuleName,
-				Key:      string(types.ParamStoreKeyInstantiateAccess),
-				Value:    string(legacyAmino.MustMarshalJSON(types.AccessTypeNobody)),
-			},
-			expUploadConfig:    types.AllowEverybody,
-			expInstantiateType: types.AccessTypeNobody,
-		},
-		"update instantiate param as default": {
-			src: proposal.ParamChange{
-				Subspace: types.ModuleName,
-				Key:      string(types.ParamStoreKeyInstantiateAccess),
-				Value:    string(legacyAmino.MustMarshalJSON(types.AccessTypeEverybody)),
-			},
-			expUploadConfig:    types.AllowEverybody,
-			expInstantiateType: types.AccessTypeEverybody,
-		},
-	}
-	for msg, spec := range specs {
-		t.Run(msg, func(t *testing.T) {
-			wasmKeeper.SetParams(ctx, types.DefaultParams())
-
-			// encode + decode as CLI to play nice with amino
-			bz := legacyAmino.MustMarshalJSON(&utils.ParamChangeProposalJSON{
-				Title:       "Foo",
-				Description: "Bar",
-				Changes:     []utils.ParamChangeJSON{{Subspace: spec.src.Subspace, Key: spec.src.Key, Value: json.RawMessage(spec.src.Value)}},
-			})
-			t.Log(string(bz))
-
-			var jsonProposal utils.ParamChangeProposalJSON
-			require.NoError(t, legacyAmino.UnmarshalJSON(bz, &jsonProposal))
-			proposal := proposal.ParameterChangeProposal{
-				Title:       jsonProposal.Title,
-				Description: jsonProposal.Description,
-				Changes:     jsonProposal.Changes.ToParamChanges(),
-			}
-			// when stored
-			mustSubmitAndExecuteLegacyProposal(t, ctx, &proposal, myAddress.String(), keepers)
-
-			// then
-			assert.True(t, spec.expUploadConfig.Equals(wasmKeeper.getUploadAccessConfig(ctx)),
-				"got %#v not %#v", wasmKeeper.getUploadAccessConfig(ctx), spec.expUploadConfig)
-			assert.Equal(t, spec.expInstantiateType, wasmKeeper.getInstantiateAccessConfig(ctx))
 		})
 	}
 }
@@ -782,16 +701,17 @@ func TestPinCodesProposal(t *testing.T) {
 			gotPinnedChecksums = nil
 			ctx, _ := parentCtx.CacheContext()
 			mock.PinFn = spec.mockFn
-			proposal := types.PinCodesProposal{
+			proposal := &types.PinCodesProposal{
 				Title:       "Foo",
 				Description: "Bar",
 				CodeIDs:     spec.srcCodeIDs,
 			}
+
 			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
 			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
 
-			// when stored
-			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, myActorAddress, govAuthority, msgServer)
+			// when
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, proposal, myActorAddress, govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return
@@ -871,16 +791,17 @@ func TestUnpinCodesProposal(t *testing.T) {
 			gotUnpinnedChecksums = nil
 			ctx, _ := parentCtx.CacheContext()
 			mock.UnpinFn = spec.mockFn
-			proposal := types.UnpinCodesProposal{
+			proposal := &types.UnpinCodesProposal{
 				Title:       "Foo",
 				Description: "Bar",
 				CodeIDs:     spec.srcCodeIDs,
 			}
+
 			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
 			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
 
 			// when
-			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return
@@ -965,17 +886,17 @@ func TestUpdateInstantiateConfigProposal(t *testing.T) {
 					InstantiatePermission: cu.InstantiatePermission,
 				})
 			}
+
 			govAuthority := keepers.AccountKeeper.GetModuleAddress(govtypes.ModuleName).String()
 			msgServer := govkeeper.NewMsgServerImpl(keepers.GovKeeper)
-
-			proposal := types.UpdateInstantiateConfigProposal{
+			proposal := &types.UpdateInstantiateConfigProposal{
 				Title:               "Foo",
 				Description:         "Bar",
 				AccessConfigUpdates: updates,
 			}
 
-			// when stored
-			contentMsg, gotErr := submitLegacyProposal(t, ctx, &proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
+			// when
+			contentMsg, gotErr := submitLegacyProposal(t, ctx, proposal, RandomBech32AccountAddress(t), govAuthority, msgServer)
 			if spec.expErr {
 				require.Error(t, gotErr)
 				return

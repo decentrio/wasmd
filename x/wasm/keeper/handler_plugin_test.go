@@ -15,6 +15,7 @@ import (
 	channeltypes "github.com/cosmos/ibc-go/v6/modules/core/04-channel/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/CosmWasm/wasmd/x/wasm/keeper/wasmtesting"
 	"github.com/CosmWasm/wasmd/x/wasm/types"
@@ -222,7 +223,7 @@ func TestSDKMessageHandlerDispatch(t *testing.T) {
 
 func TestIBCRawPacketHandler(t *testing.T) {
 	ibcPort := "contractsIBCPort"
-	var ctx sdk.Context
+	ctx := sdk.Context{}.WithLogger(log.TestingLogger())
 
 	type CapturedPacket struct {
 		sourcePort       string
@@ -268,7 +269,7 @@ func TestIBCRawPacketHandler(t *testing.T) {
 		srcMsg        wasmvmtypes.SendPacketMsg
 		chanKeeper    types.ChannelKeeper
 		capKeeper     types.CapabilityKeeper
-		expPacketSent channeltypes.Packet
+		expPacketSent *CapturedPacket
 		expErr        *sdkerrors.Error
 	}{
 		"all good": {
@@ -279,28 +280,12 @@ func TestIBCRawPacketHandler(t *testing.T) {
 			},
 			chanKeeper: chanKeeper,
 			capKeeper:  capKeeper,
-			expPacketSent: channeltypes.Packet{
-				Sequence:           1,
-				SourcePort:         ibcPort,
-				SourceChannel:      "channel-1",
-				DestinationPort:    "other-port",
-				DestinationChannel: "other-channel-1",
-				Data:               []byte("myData"),
-				TimeoutHeight:      clienttypes.Height{RevisionNumber: 1, RevisionHeight: 2},
+			expPacketSent: &CapturedPacket{
+				sourcePort:    ibcPort,
+				sourceChannel: "channel-1",
+				data:          []byte("myData"),
+				timeoutHeight: clienttypes.Height{RevisionNumber: 1, RevisionHeight: 2},
 			},
-		},
-		"sequence not found returns error": {
-			srcMsg: wasmvmtypes.SendPacketMsg{
-				ChannelID: "channel-1",
-				Data:      []byte("myData"),
-				Timeout:   wasmvmtypes.IBCTimeout{Block: &wasmvmtypes.IBCTimeoutBlock{Revision: 1, Height: 2}},
-			},
-			chanKeeper: &wasmtesting.MockChannelKeeper{
-				GetNextSequenceSendFn: func(ctx sdk.Context, portID, channelID string) (uint64, bool) {
-					return 0, false
-				},
-			},
-			expErr: channeltypes.ErrSequenceSendNotFound,
 		},
 		"capability not found returns error": {
 			srcMsg: wasmvmtypes.SendPacketMsg{
