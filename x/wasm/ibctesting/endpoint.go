@@ -323,9 +323,8 @@ func (endpoint *Endpoint) ChanOpenTry() error {
 
 // ChanOpenAck will construct and execute a MsgChannelOpenAck on the associated endpoint.
 func (endpoint *Endpoint) ChanOpenAck() error {
-	if err := endpoint.UpdateClient(); err != nil {
-		return err
-	}
+	err := endpoint.UpdateClient()
+	require.NoError(endpoint.Chain.t, err)
 
 	channelKey := host.ChannelKey(endpoint.Counterparty.ChannelConfig.PortID, endpoint.Counterparty.ChannelID)
 	proof, height := endpoint.Counterparty.Chain.QueryProof(channelKey)

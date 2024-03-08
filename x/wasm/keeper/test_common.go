@@ -60,6 +60,8 @@ import (
 	upgradeclient "github.com/cosmos/cosmos-sdk/x/upgrade/client"
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	icacontrollertypes "github.com/cosmos/ibc-go/v6/modules/apps/27-interchain-accounts/controller/types"
+	icahosttypes "github.com/cosmos/ibc-go/v6/modules/apps/27-interchain-accounts/host/types"
 	"github.com/cosmos/ibc-go/v6/modules/apps/transfer"
 	ibctransfertypes "github.com/cosmos/ibc-go/v6/modules/apps/transfer/types"
 	ibc "github.com/cosmos/ibc-go/v6/modules/core"
@@ -270,6 +272,42 @@ func createTestInput(
 	subspace := func(m string) paramstypes.Subspace {
 		r, ok := paramsKeeper.GetSubspace(m)
 		require.True(t, ok)
+
+		var keyTable paramstypes.KeyTable
+		switch r.Name() {
+		case authtypes.ModuleName:
+			keyTable = authtypes.ParamKeyTable() //nolint:staticcheck
+		case banktypes.ModuleName:
+			keyTable = banktypes.ParamKeyTable() //nolint:staticcheck
+		case stakingtypes.ModuleName:
+			keyTable = stakingtypes.ParamKeyTable()
+		case minttypes.ModuleName:
+			keyTable = minttypes.ParamKeyTable() //nolint:staticcheck
+		case distributiontypes.ModuleName:
+			keyTable = distributiontypes.ParamKeyTable() //nolint:staticcheck
+		case slashingtypes.ModuleName:
+			keyTable = slashingtypes.ParamKeyTable() //nolint:staticcheck
+		case govtypes.ModuleName:
+			keyTable = govv1.ParamKeyTable() //nolint:staticcheck
+		case crisistypes.ModuleName:
+			keyTable = crisistypes.ParamKeyTable() //nolint:staticcheck
+			// ibc types
+		case ibctransfertypes.ModuleName:
+			keyTable = ibctransfertypes.ParamKeyTable()
+		case icahosttypes.SubModuleName:
+			keyTable = icahosttypes.ParamKeyTable()
+		case icacontrollertypes.SubModuleName:
+			keyTable = icacontrollertypes.ParamKeyTable()
+			// wasm
+		case types.ModuleName:
+			keyTable = types.ParamKeyTable() //nolint:staticcheck
+		default:
+			return r
+		}
+
+		if !r.HasKeyTable() {
+			r = r.WithKeyTable(keyTable)
+		}
 		return r
 	}
 	maccPerms := map[string][]string{ // module account permissions

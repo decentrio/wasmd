@@ -63,7 +63,7 @@ func (k Keeper) OnConnectChannel(
 	contractInfo, codeInfo, prefixStore, err := k.contractInstance(ctx, contractAddr)
 	if err != nil {
 		return err
-	}
+	} 
 
 	env := types.NewEnv(ctx, contractAddr)
 	querier := k.newQueryHandler(ctx, contractAddr)

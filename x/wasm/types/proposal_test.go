@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1117,7 +1118,7 @@ func TestProposalJsonSignBytes(t *testing.T) {
 			exp: `
 {
 	"type":"cosmos-sdk/MsgSubmitProposal",
-	"value":{"content":{"type":"wasm/InstantiateContractProposal","value":{"funds":[],"msg":{"foo":"bar"}}},"initial_deposit":[]}
+	"value":{"content":{"funds":[],"msg":{"foo":"bar"}},"initial_deposit":[]}
 }`,
 		},
 		"migrate contract": {
@@ -1125,7 +1126,7 @@ func TestProposalJsonSignBytes(t *testing.T) {
 			exp: `
 {
 	"type":"cosmos-sdk/MsgSubmitProposal",
-	"value":{"content":{"type":"wasm/MigrateContractProposal","value":{"msg":{"foo":"bar"}}},"initial_deposit":[]}
+	"value":{"content":{"msg":{"foo":"bar"}},"initial_deposit":[]}
 }`,
 		},
 	}

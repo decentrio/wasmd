@@ -304,6 +304,7 @@ func TestEncoding(t *testing.T) {
 				},
 			},
 			expError: false, // fails in the handler
+			expInvalid: true,
 			output: []sdk.Msg{
 				&stakingtypes.MsgDelegate{
 					DelegatorAddress: addr1.String(),

@@ -300,6 +300,7 @@ func TestIBCRawPacketHandler(t *testing.T) {
 					return 0, false
 				},
 			},
+			capKeeper: capKeeper,
 			expErr: channeltypes.ErrSequenceSendNotFound,
 		},
 		"capability not found returns error": {
