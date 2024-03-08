@@ -2,13 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
 
-	wasmvm "github.com/CosmWasm/wasmvm"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -133,10 +133,7 @@ func parseVerificationFlags(gzippedWasm []byte, flags *flag.FlagSet) (string, st
 		if err != nil {
 			return "", "", nil, fmt.Errorf("invalid zip: %w", err)
 		}
-		checksum, err := wasmvm.CreateChecksum(raw)
-		if err != nil {
-			return "", "", nil, fmt.Errorf("checksum: %s", err)
-		}
+		checksum := sha256.Sum256(raw)
 		if !bytes.Equal(checksum[:], codeHash) {
 			return "", "", nil, fmt.Errorf("code-hash mismatch: %X, checksum: %X", codeHash, checksum)
 		}

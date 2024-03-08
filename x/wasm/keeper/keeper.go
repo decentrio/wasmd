@@ -200,7 +200,7 @@ func (k Keeper) importCode(ctx sdk.Context, codeID uint64, codeInfo types.CodeIn
 			return types.ErrCreateFailed.Wrap(sdkerrors.Wrap(err, "uncompress wasm archive").Error())
 		}
 	}
-	newCodeHash, err := k.wasmVM.StoreCodeUnchecked(wasmCode)
+	newCodeHash, err := k.wasmVM.Create(wasmCode)
 	if err != nil {
 		return sdkerrors.Wrap(types.ErrCreateFailed, err.Error())
 	}

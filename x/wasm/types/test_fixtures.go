@@ -2,12 +2,12 @@ package types
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"math/rand"
 
-	wasmvm "github.com/CosmWasm/wasmvm"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -67,10 +67,7 @@ func CodeFixture(mutators ...func(*Code)) Code {
 }
 
 func CodeInfoFixture(mutators ...func(*CodeInfo)) CodeInfo {
-	codeHash, err := wasmvm.CreateChecksum(reflectWasmCode)
-	if err != nil {
-		panic(err)
-	}
+	codeHash := sha256.Sum256(reflectWasmCode)
 	const anyAddress = "cosmos1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs2m6sx4"
 	fixture := CodeInfo{
 		CodeHash:          codeHash[:],
@@ -141,10 +138,7 @@ func ContractCodeHistoryEntryFixture(mutators ...func(*ContractCodeHistoryEntry)
 
 func WithSHA256CodeHash(wasmCode []byte) func(info *CodeInfo) {
 	return func(info *CodeInfo) {
-		codeHash, err := wasmvm.CreateChecksum(wasmCode)
-		if err != nil {
-			panic(err)
-		}
+		codeHash := sha256.Sum256(wasmCode)
 		info.CodeHash = codeHash[:]
 	}
 }
